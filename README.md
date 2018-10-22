@@ -1,0 +1,2 @@
+# lib_uriparser
+uriparser is a strictly RFC 3986 compliant URI parsing and handling library written in C. uriparser is cross-platform, fast, supports Unicode
