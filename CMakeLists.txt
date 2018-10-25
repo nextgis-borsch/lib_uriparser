@@ -152,18 +152,23 @@ else()
     add_library(${LIB_NAME} STATIC ${SRCS} ${PUBLIC_HDRS})
 endif()
 
+set(TARGETS ${LIB_NAME})
+
+if(NOT SKIP_BUILD_APPS)
 add_executable(uriparser_exe tool/uriparse.c)
-target_link_libraries(uriparser_exe ${LIB_NAME})
-if(OSX_FRAMEWORK)
-    set_target_properties(uriparser_exe PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
+    target_link_libraries(uriparser_exe ${LIB_NAME})
+    if(OSX_FRAMEWORK)
+        set_target_properties(uriparser_exe PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
+    endif()
+    set_target_properties(uriparser_exe PROPERTIES OUTPUT_NAME uriparser)
+    set(TARGETS ${TARGETS} uriparser_exe)
 endif()
-set_target_properties(uriparser_exe PROPERTIES OUTPUT_NAME uriparser)
 
 set(PACKAGE_NAME ${PROJECT_NAME})
 string(TOUPPER ${PACKAGE_NAME} PACKAGE_UPPER_NAME)
 
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
-    install(TARGETS ${LIB_NAME} uriparser_exe
+    install(TARGETS ${TARGETS}
         EXPORT ${PACKAGE_UPPER_NAME}Targets
         RUNTIME DESTINATION ${INSTALL_BIN_DIR}
         LIBRARY DESTINATION ${INSTALL_LIB_DIR}
