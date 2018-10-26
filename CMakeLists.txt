@@ -154,7 +154,7 @@ endif()
 
 set(TARGETS ${LIB_NAME})
 
-if(NOT SKIP_BUILD_APPS)
+if(NOT SKIP_BUILD_APPS AND UNIX)
 add_executable(uriparser_exe tool/uriparse.c)
     target_link_libraries(uriparser_exe ${LIB_NAME})
     if(OSX_FRAMEWORK)
