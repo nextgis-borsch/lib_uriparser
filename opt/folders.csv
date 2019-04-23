@@ -3,7 +3,7 @@ Build-aux,,skip,
 doc,,skip,
 include/uriparser,include/uriparser,,h
 m4,,skip,
-src,src,,"h,c"
-test,,skip,
+src,src,,"h,c,in"
+test,test,,"cpp,COPYING"
 tool,tool,,c
 win32,,skip,

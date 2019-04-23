@@ -72,6 +72,7 @@ endif()
 include(util)
 check_version(URI_MAJOR_VERSION URI_MINOR_VERSION URI_REV_VERSION)
 set(VERSION ${URI_MAJOR_VERSION}.${URI_MINOR_VERSION}.${URI_REV_VERSION})
+set(PROJECT_VERSION ${VERSION})
 
 if(OSX_FRAMEWORK)
     set(FRAMEWORK_VERSION "${URI_MAJOR_VERSION}")
@@ -80,21 +81,68 @@ report_version(${PROJECT_NAME} ${VERSION})
 
 configure_file(${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
 
-include (CheckFunctionExists)
+include(CheckFunctionExists)
+include(CheckCCompilerFlag)
+include(CheckLibraryExists)
+include(CheckSymbolExists)
+
+option(URIPARSER_BUILD_CHAR "Build code supporting data type 'char'" ON)
+option(URIPARSER_BUILD_WCHAR_T "Build code supporting data type 'wchar_t'" ON)
+set(URIPARSER_MSVC_RUNTIME "" CACHE STRING "Use of specific runtime library (/MT /MTd /MD /MDd) with MSVC")
+
+if(NOT URIPARSER_BUILD_CHAR AND NOT URIPARSER_BUILD_WCHAR_T)
+    message(SEND_ERROR "One or more of URIPARSER_BUILD_CHAR and URIPARSER_BUILD_WCHAR_T needs to be enabled.")
+endif()
+if(BUILD_TESTING AND NOT (URIPARSER_BUILD_CHAR AND URIPARSER_BUILD_WCHAR_T))
+    message(SEND_ERROR "URIPARSER_BUILD_TESTS=ON requires both URIPARSER_BUILD_CHAR=ON and URIPARSER_BUILD_WCHAR_T=ON.")
+endif()
+if(URIPARSER_BUILD_TOOLS AND NOT URIPARSER_BUILD_CHAR)
+    message(SEND_ERROR "URIPARSER_BUILD_TOOLS=ON requires URIPARSER_BUILD_CHAR=ON.")
+endif()
+
+if(MSVC AND URIPARSER_MSVC_RUNTIME)
+    set(_refs
+        CMAKE_CXX_FLAGS
+        CMAKE_CXX_FLAGS_DEBUG
+        CMAKE_CXX_FLAGS_RELEASE
+        CMAKE_C_FLAGS
+        CMAKE_C_FLAGS_DEBUG
+        CMAKE_C_FLAGS_RELEASE
+    )
+    foreach(_ref ${_refs})
+        string(REGEX REPLACE "/M[DT]d?" ${URIPARSER_MSVC_RUNTIME} ${_ref} "${${_ref}}")
+    endforeach()
+endif()
+
+#
+# Compiler checks
+#
+set(URIPARSER_EXTRA_COMPILE_FLAGS)
+
+check_c_compiler_flag("-fvisibility=hidden" URIPARSER_COMPILER_SUPPORTS_VISIBILITY)
+if(URIPARSER_COMPILER_SUPPORTS_VISIBILITY)
+    set(URIPARSER_EXTRA_COMPILE_FLAGS "${URIPARSER_EXTRA_COMPILE_FLAGS} -fvisibility=hidden")
+endif()
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${URIPARSER_EXTRA_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${URIPARSER_EXTRA_COMPILE_FLAGS}")
+
 check_function_exists(wprintf HAVE_WPRINTF)
 option(URI_SIZEDOWN "enable sizedown to save space whereever possible" OFF)
 if(URI_SIZEDOWN)
     add_definitions(-DURI_SIZEDOWN)
 endif()
+check_function_exists(reallocarray HAVE_REALLOCARRAY)  # no luck with CheckSymbolExists
+configure_file(src/UriConfig.h.in config.h)
 
 include_directories ( ${CMAKE_CURRENT_SOURCE_DIR}/include )
 
 set(PUBLIC_HDRS
-    include/uriparser/Uri.h
     include/uriparser/UriBase.h
     include/uriparser/UriDefsAnsi.h
     include/uriparser/UriDefsConfig.h
     include/uriparser/UriDefsUnicode.h
+    include/uriparser/Uri.h
     include/uriparser/UriIp4.h
 )
 
@@ -104,15 +152,17 @@ set(SRCS
     src/UriCompare.c
     src/UriEscape.c
     src/UriFile.c
-    src/UriIp4.c
     src/UriIp4Base.c
     src/UriIp4Base.h
-    src/UriNormalize.c
+    src/UriIp4.c
+    src/UriMemory.c
+    src/UriMemory.h
     src/UriNormalizeBase.c
     src/UriNormalizeBase.h
-    src/UriParse.c
+    src/UriNormalize.c
     src/UriParseBase.c
     src/UriParseBase.h
+    src/UriParse.c
     src/UriQuery.c
     src/UriRecompose.c
     src/UriResolve.c
@@ -150,18 +200,34 @@ elseif(OSX_FRAMEWORK)
       )
 else()
     add_library(${LIB_NAME} STATIC ${SRCS} ${PUBLIC_HDRS})
+    target_compile_definitions(${LIB_NAME} PUBLIC URI_STATIC_BUILD)
+endif()
+
+target_compile_definitions(${LIB_NAME} PRIVATE URI_LIBRARY_BUILD)
+if(NOT URIPARSER_BUILD_CHAR)
+    target_compile_definitions(${LIB_NAME} PUBLIC URI_NO_ANSI)
+endif()
+if(NOT URIPARSER_BUILD_WCHAR_T)
+    target_compile_definitions(${LIB_NAME} PUBLIC URI_NO_UNICODE)
+endif()
+if(URIPARSER_COMPILER_SUPPORTS_VISIBILITY)
+    target_compile_definitions(${LIB_NAME} PRIVATE URI_VISIBILITY)
 endif()
 
 set(TARGETS ${LIB_NAME})
 
 if(NOT SKIP_BUILD_APPS AND UNIX)
-add_executable(uriparser_exe tool/uriparse.c)
+    add_executable(uriparser_exe tool/uriparse.c)
     target_link_libraries(uriparser_exe ${LIB_NAME})
     if(OSX_FRAMEWORK)
         set_target_properties(uriparser_exe PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
     endif()
     set_target_properties(uriparser_exe PROPERTIES OUTPUT_NAME uriparser)
     set(TARGETS ${TARGETS} uriparser_exe)
+
+    if(WIN32)
+        target_link_libraries(uriparser_exe PUBLIC ws2_32)
+    endif()
 endif()
 
 set(PACKAGE_NAME ${PROJECT_NAME})
@@ -185,13 +251,50 @@ endif()
 # Testing ======================================================================
 enable_testing()
 if(BUILD_TESTING)
-    # add_executable(tstcodec libjbig/tstcodec.c)
-    # target_link_libraries(tstcodec ${LIB_NAME})
-    # add_test(tstcodec tstcodec)
-    #
-    # add_executable(tstcodec85 libjbig/tstcodec85.c)
-    # target_link_libraries(tstcodec85 ${LIB_NAME})
-    # add_test(tstcodec85 tstcodec85)
+    include(FindAnyProject)
+    include(CTest)
+    set(API_HEADER_FILES ${PUBLIC_HDRS})
+    set(LIBRARY_CODE_FILES ${SRCS})
+
+    find_anyproject(GTest REQUIRED)
+
+    add_executable(testrunner
+        test/FourSuite.cpp
+        test/MemoryManagerSuite.cpp
+        test/test.cpp
+        test/VersionSuite.cpp
+
+        # These library code files have non-public symbols that the test suite
+        # needs to link to, so they appear here as well:
+        ${API_HEADER_FILES}
+        ${LIBRARY_CODE_FILES}
+    )
+
+    target_compile_definitions(testrunner PRIVATE URI_STATIC_BUILD)
+
+    if(MSVC)
+        target_compile_definitions(testrunner PRIVATE -D_CRT_SECURE_NO_WARNINGS)
+    endif()
+
+    target_include_directories(testrunner SYSTEM PRIVATE
+        ${GTEST_INCLUDE_DIRS}
+    )
+
+    target_include_directories(testrunner PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}  # for config.h
+    )
+
+    target_link_extlibraries(testrunner)
+
+    add_test(
+        NAME
+            test
+        COMMAND
+            testrunner
+    )
+
+    # add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
 endif()
 
 # uninstall
@@ -202,6 +305,8 @@ add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_D
 # Add path to includes to build-tree export
 target_include_directories(${LIB_NAME} INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  PRIVATE
+      ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # Add all targets to the build-tree export set
