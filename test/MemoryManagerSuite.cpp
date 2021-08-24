@@ -19,13 +19,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#undef NDEBUG  // because we rely on assert(3) further down
+
 #include <cassert>
 #include <cerrno>
 #include <cstring>  // memcpy
 #include <gtest/gtest.h>
 
 #include <uriparser/Uri.h>
+
+// For defaultMemoryManager
+extern "C" {
 #include "../src/UriMemory.h"
+}
 
 
 namespace {
